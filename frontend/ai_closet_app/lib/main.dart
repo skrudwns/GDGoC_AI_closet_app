@@ -135,6 +135,9 @@ class ClothingItem {
     required this.tags,
     required this.confidence,
     required this.imageUrl,
+    required this.materials,
+    required this.seasons,
+    required this.occasions,
     required this.palette,
     required this.icon,
   });
@@ -145,6 +148,9 @@ class ClothingItem {
   final List<String> tags;
   final double confidence;
   final String imageUrl;
+  final List<String> materials;
+  final List<String> seasons;
+  final List<String> occasions;
   final List<Color> palette;
   final IconData icon;
 }
@@ -170,6 +176,9 @@ const mockItems = [
     confidence: 0.94,
     imageUrl:
         'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80',
+    materials: ['울', '안감 있음'],
+    seasons: ['가을', '겨울'],
+    occasions: ['발표', '면접', '격식'],
     palette: [Color(0xFF161616), Color(0xFF444247)],
     icon: Icons.checkroom_outlined,
   ),
@@ -181,6 +190,9 @@ const mockItems = [
     confidence: 0.91,
     imageUrl:
         'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80',
+    materials: ['코튼'],
+    seasons: ['봄', '여름', '가을'],
+    occasions: ['데일리', '발표', '레이어드'],
     palette: [Color(0xFFECEFF3), Color(0xFFFFFFFF)],
     icon: Icons.dry_cleaning_outlined,
   ),
@@ -192,6 +204,9 @@ const mockItems = [
     confidence: 0.88,
     imageUrl:
         'https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=80',
+    materials: ['데님', '코튼'],
+    seasons: ['사계절'],
+    occasions: ['데일리', '캠퍼스', '캐주얼'],
     palette: [Color(0xFF203A5F), Color(0xFF5E7BA3)],
     icon: Icons.texture_outlined,
   ),
@@ -203,6 +218,9 @@ const mockItems = [
     confidence: 0.86,
     imageUrl:
         'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80',
+    materials: ['니트', '울 블렌드'],
+    seasons: ['가을', '겨울'],
+    occasions: ['카페', '캠퍼스', '데일리'],
     palette: [Color(0xFFA18D7B), Color(0xFFD4C2B1)],
     icon: Icons.layers_outlined,
   ),
@@ -214,6 +232,9 @@ const mockItems = [
     confidence: 0.9,
     imageUrl:
         'https://images.unsplash.com/photo-1539533018447-63fcce2678e3?auto=format&fit=crop&w=900&q=80',
+    materials: ['폴리', '플리츠'],
+    seasons: ['봄', '가을'],
+    occasions: ['발표', '모임', '데일리'],
     palette: [Color(0xFF4A4A4F), Color(0xFF8B8B92)],
     icon: Icons.view_agenda_outlined,
   ),
@@ -225,6 +246,9 @@ const mockItems = [
     confidence: 0.84,
     imageUrl:
         'https://images.unsplash.com/photo-1551232864-3f0890e580d9?auto=format&fit=crop&w=900&q=80',
+    materials: ['코튼', '나일론'],
+    seasons: ['봄', '가을'],
+    occasions: ['산책', '여행', '캐주얼'],
     palette: [Color(0xFF56614B), Color(0xFF87916F)],
     icon: Icons.hiking_outlined,
   ),
@@ -382,8 +406,10 @@ class HomeScreen extends StatelessWidget {
               crossAxisSpacing: 16,
               childAspectRatio: 0.78,
             ),
-            itemBuilder: (context, index) =>
-                ClothingTile(item: mockItems[index]),
+            itemBuilder: (context, index) => ClothingTile(
+              item: mockItems[index],
+              onTap: () => _openItemDetail(context, mockItems[index]),
+            ),
           ),
         ),
       ],
@@ -452,8 +478,10 @@ class _ClosetScreenState extends State<ClosetScreen> {
               crossAxisSpacing: 16,
               childAspectRatio: 0.78,
             ),
-            itemBuilder: (context, index) =>
-                ClothingTile(item: filteredItems[index]),
+            itemBuilder: (context, index) => ClothingTile(
+              item: filteredItems[index],
+              onTap: () => _openItemDetail(context, filteredItems[index]),
+            ),
           ),
         ),
       ],
@@ -556,7 +584,106 @@ class SettingsScreen extends StatelessWidget {
 }
 
 class ClothingTile extends StatelessWidget {
-  const ClothingTile({super.key, required this.item});
+  const ClothingTile({super.key, required this.item, this.onTap});
+
+  final ClothingItem item;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Semantics(
+      button: onTap != null,
+      label: '${item.name} 상세 보기',
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Positioned.fill(child: _ClothingImageFallback(item: item)),
+                    Positioned.fill(
+                      child: Image.network(
+                        item.imageUrl,
+                        fit: BoxFit.cover,
+                        frameBuilder:
+                            (context, child, frame, wasSynchronouslyLoaded) {
+                              if (wasSynchronouslyLoaded || frame != null) {
+                                return child;
+                              }
+
+                              return _ClothingImageFallback(item: item);
+                            },
+                        errorBuilder: (context, error, stackTrace) {
+                          return _ClothingImageFallback(item: item);
+                        },
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.18),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      right: 8,
+                      top: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.82),
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Text(
+                          '${(item.confidence * 100).round()}%',
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primaryText,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              item.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.titleMedium,
+            ),
+            const SizedBox(height: 2),
+            Text(item.category, style: textTheme.bodyMedium),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ClothingDetailScreen extends StatelessWidget {
+  const ClothingDetailScreen({super.key, required this.item});
 
   final ClothingItem item;
 
@@ -564,85 +691,225 @@ class ClothingTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Positioned.fill(child: _ClothingImageFallback(item: item)),
-                Positioned.fill(
-                  child: Image.network(
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            expandedHeight: 360,
+            backgroundColor: AppColors.background,
+            foregroundColor: AppColors.primaryText,
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _ClothingImageFallback(item: item),
+                  Image.network(
                     item.imageUrl,
                     fit: BoxFit.cover,
-                    frameBuilder:
-                        (context, child, frame, wasSynchronouslyLoaded) {
-                          if (wasSynchronouslyLoaded || frame != null) {
-                            return child;
-                          }
-
-                          return _ClothingImageFallback(item: item);
-                        },
                     errorBuilder: (context, error, stackTrace) {
                       return _ClothingImageFallback(item: item);
                     },
                   ),
-                ),
-                Positioned.fill(
-                  child: DecoratedBox(
+                  DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                         colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.18),
+                          Colors.black.withValues(alpha: 0.08),
+                          Colors.black.withValues(alpha: 0.38),
                         ],
                       ),
                     ),
                   ),
-                ),
-                Positioned(
-                  right: 8,
-                  top: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.82),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      '${(item.confidence * 100).round()}%',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primaryText,
-                      ),
+                  Positioned(
+                    left: 20,
+                    right: 20,
+                    bottom: 22,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.name,
+                          style: textTheme.headlineMedium?.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _DetailPill(item.category),
+                            _DetailPill(
+                              'AI ${(item.confidence * 100).round()}%',
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            sliver: SliverList.list(
+              children: [
+                _DetailSection(
+                  title: '기본 정보',
+                  children: [
+                    _InfoRow(label: '카테고리', value: item.category),
+                    _InfoRow(label: '색상', value: item.colors.join(', ')),
+                    _InfoRow(label: '소재', value: item.materials.join(', ')),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                _DetailSection(
+                  title: '활용 정보',
+                  children: [
+                    _InfoRow(label: '계절', value: item.seasons.join(', ')),
+                    _InfoRow(label: '상황', value: item.occasions.join(', ')),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text('태그', style: textTheme.titleLarge),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [for (final tag in item.tags) TagChip(tag)],
+                ),
+                const SizedBox(height: 24),
+                _DetailSection(
+                  title: 'AI 분류 메모',
+                  children: [
+                    Text(
+                      'Fashionpedia가 이 옷을 ${item.category}로 분류했고, 신뢰도는 ${(item.confidence * 100).round()}%예요. 실제 저장 전에는 사용자가 태그를 수정할 수 있도록 연결할 예정입니다.',
+                      style: textTheme.bodyLarge,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () =>
+                            _showFeatureSnack(context, '수정 화면은 다음 단계에서 연결할게요.'),
+                        icon: const Icon(Icons.edit_outlined),
+                        label: const Text('수정'),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => _showFeatureSnack(
+                          context,
+                          '이 옷을 포함한 추천 코디를 준비할게요.',
+                        ),
+                        icon: const Icon(Icons.auto_awesome_outlined),
+                        label: const Text('코디 추천'),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          item.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: textTheme.titleMedium,
-        ),
-        const SizedBox(height: 2),
-        Text(item.category, style: textTheme.bodyMedium),
-      ],
+        ],
+      ),
     );
   }
+}
+
+class _DetailPill extends StatelessWidget {
+  const _DetailPill(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: AppColors.primaryText,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
+
+class _DetailSection extends StatelessWidget {
+  const _DetailSection({required this.title, required this.children});
+
+  final String title;
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.groupedBackground,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 12),
+          ...children,
+        ],
+      ),
+    );
+  }
+}
+
+class _InfoRow extends StatelessWidget {
+  const _InfoRow({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 76,
+            child: Text(label, style: Theme.of(context).textTheme.bodyMedium),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+void _openItemDetail(BuildContext context, ClothingItem item) {
+  Navigator.of(context).push(
+    MaterialPageRoute(builder: (context) => ClothingDetailScreen(item: item)),
+  );
 }
 
 class _ClothingImageFallback extends StatelessWidget {

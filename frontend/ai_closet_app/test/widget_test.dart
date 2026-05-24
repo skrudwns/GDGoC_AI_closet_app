@@ -55,4 +55,30 @@ void main() {
     expect(find.text('블랙 울 블레이저'), findsOneWidget);
     expect(find.text('올리브 필드 재킷'), findsOneWidget);
   });
+
+  testWidgets('clothing tile opens item detail screen', (tester) async {
+    await tester.pumpWidget(const AiClosetApp());
+
+    await tester.tap(find.byIcon(Icons.grid_view_outlined));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find
+          .ancestor(
+            of: find.text('블랙 울 블레이저'),
+            matching: find.byType(InkWell),
+          )
+          .first,
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('기본 정보'), findsOneWidget);
+    expect(find.text('활용 정보'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('AI 분류 메모'),
+      200,
+      scrollable: find.byType(Scrollable),
+    );
+    expect(find.text('AI 분류 메모'), findsOneWidget);
+    expect(find.text('울, 안감 있음'), findsOneWidget);
+  });
 }
