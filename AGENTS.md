@@ -21,6 +21,13 @@ Frontend only. Assume other teammates own:
 
 Frontend should still define clear API expectations and mock against them until backend endpoints are ready.
 
+## Repository Layout
+
+- Flutter frontend: `frontend/ai_closet_app`
+- FastAPI backend: `backend`
+- AI/model work: `ai`
+- Shared docs: `docs`
+
 ## Design System
 
 Always follow `DESIGN.md` for UI work.
@@ -44,6 +51,8 @@ Use an Apple-inspired, image-first, quiet premium interface. Avoid clutter, heav
 - Separate screens, domain models, service clients, and reusable UI components.
 - Add mock repositories before backend integration is available.
 - Verify UI on at least one compact mobile viewport before calling a screen complete.
+- Use feature branches instead of committing directly to `main`.
+- Follow `docs/team-workflow.md` for team collaboration.
 
 ## Useful Agent Workflows
 
@@ -54,4 +63,3 @@ Use these external skill systems as references or installed tools where availabl
 - Superpowers: brainstorming, plans, TDD, systematic debugging, verification.
 
 See `docs/skills.md` for installation status and usage notes.
-
