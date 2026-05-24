@@ -3,7 +3,7 @@
 ## Phase 0: Setup
 
 - Install Flutter and Dart.
-- Create Flutter app.
+- Create Flutter app in `frontend/ai_closet_app`.
 - Add linting.
 - Add app theme from `DESIGN.md`.
 - Add mock data fixtures.
@@ -54,4 +54,3 @@
 - Accessibility labels.
 - Offline and slow-network behavior.
 - Real-device camera testing.
-

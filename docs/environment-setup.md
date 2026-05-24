@@ -35,10 +35,10 @@ For VS Code, install:
 - Flutter extension
 - Dart extension
 
-The app has been created in `ai_closet_app`.
+The app has been created in `frontend/ai_closet_app`.
 
 ```bash
-cd ai_closet_app
+cd frontend/ai_closet_app
 flutter run
 ```
 
