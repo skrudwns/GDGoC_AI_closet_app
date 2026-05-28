@@ -1,0 +1,72 @@
+# ==========================================
+# macOS 및 OS 시스템 파일
+# ==========================================
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon\r
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# ==========================================
+# IDE 및 텍스트 에디터
+# ==========================================
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw*
+*.swo
+*.swn
+.project
+.classpath
+.cproject
+.settings/
+
+# ==========================================
+# Python / FastAPI 백엔드 (backend/)
+# ==========================================
+backend/venv/
+backend/.env
+backend/__pycache__/
+backend/**/*.pyc
+backend/**/*.pyo
+backend/**/*.pyd
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+backend/pip-log.txt
+backend/pip-delete-this-directory.txt
+backend/TEAM_GUIDE.md
+
+# 로컬 이미지 저장 공간 (크롭 및 원본 이미지 리소스 제외)
+backend/storage/
+storage/
+
+# AI 모델 캐시 및 가중치 파일
+backend/app/pipeline/models/
+ai/models/
+*.pt
+*.pth
+*.bin
+*.h5
+
+# ==========================================
+# Flutter 프론트엔드 (frontend/ai_closet_app/)
+# ==========================================
+frontend/ai_closet_app/.dart_tool/
+frontend/ai_closet_app/build/
+frontend/ai_closet_app/.flutter-plugins
+frontend/ai_closet_app/.flutter-plugins-dependencies
+frontend/ai_closet_app/.metadata
+frontend/ai_closet_app/ios/Flutter/ephemeral/
+frontend/ai_closet_app/ios/Flutter/Generated.xcconfig
+frontend/ai_closet_app/ios/Flutter/flutter_export_environment.sh
+frontend/ai_closet_app/android/key.properties
+frontend/ai_closet_app/android/app/local.properties
+frontend/ai_closet_app/android/.gradle/
