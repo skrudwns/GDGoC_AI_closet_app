@@ -1,4 +1,11 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
+import 'models/clothing_api_item.dart';
+import 'services/api_client.dart';
 
 void main() {
   runApp(const AiClosetApp());
@@ -290,13 +297,21 @@ class _ClosetShellState extends State<ClosetShell> {
         onAsk: () => setState(() => _selectedIndex = 3),
       ),
       const ClosetScreen(),
-      const AddItemScreen(),
+      AddItemScreen(
+        onUploadComplete: () => setState(() => _selectedIndex = 1),
+      ),
       const AskClosetScreen(),
       const SettingsScreen(),
     ];
 
     return Scaffold(
-      body: SafeArea(child: screens[_selectedIndex]),
+      // IndexedStack: 모든 탭을 메모리에 유지 → 탭 전환 시 State 보존
+      body: SafeArea(
+        child: IndexedStack(
+          index: _selectedIndex,
+          children: screens,
+        ),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
         onDestinationSelected: (index) {
@@ -426,22 +441,48 @@ class ClosetScreen extends StatefulWidget {
 
 class _ClosetScreenState extends State<ClosetScreen> {
   String _selectedFilter = '전체';
+  List<ClothingApiItem> _apiItems = [];
+  bool _isLoading = true;
+  String? _error;
 
-  List<ClothingItem> get _filteredItems {
-    if (_selectedFilter == '전체') {
-      return mockItems;
+  @override
+  void initState() {
+    super.initState();
+    _loadItems();
+  }
+
+  Future<void> _loadItems() async {
+    setState(() { _isLoading = true; _error = null; });
+    try {
+      final items = await ClosetApiClient.getClothingList(userId: 1);
+      if (mounted) setState(() { _apiItems = items; _isLoading = false; });
+    } catch (e) {
+      if (mounted) setState(() { _error = e.toString(); _isLoading = false; });
     }
+  }
 
-    return mockItems.where((item) {
+  /// 실데이터 기반 동적 카테고리 필터 목록
+  List<String> get _filters {
+    final categories = _apiItems
+        .map((item) => item.category)
+        .whereType<String>()
+        .toSet()
+        .toList()
+      ..sort();
+    return ['전체', ...categories];
+  }
+
+  List<ClothingApiItem> get _filteredItems {
+    if (_selectedFilter == '전체') return _apiItems;
+    return _apiItems.where((item) {
       return item.category == _selectedFilter ||
-          item.tags.contains(_selectedFilter);
+          item.subCategory == _selectedFilter;
     }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
-    final filteredItems = _filteredItems;
 
     return CustomScrollView(
       slivers: [
@@ -451,46 +492,174 @@ class _ClosetScreenState extends State<ClosetScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('옷장', style: textTheme.displaySmall),
+                Row(
+                  children: [
+                    Expanded(child: Text('옷장', style: textTheme.displaySmall)),
+                    IconButton(
+                      icon: const Icon(Icons.refresh_outlined),
+                      onPressed: _loadItems,
+                      tooltip: '새로고침',
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 _FilterRow(
                   selectedFilter: _selectedFilter,
-                  onSelected: (filter) {
-                    setState(() => _selectedFilter = filter);
-                  },
+                  filters: _filters,
+                  onSelected: (filter) => setState(() => _selectedFilter = filter),
                 ),
                 const SizedBox(height: 12),
-                Text(
-                  '${filteredItems.length}개의 옷이 보여요',
-                  style: textTheme.bodyMedium,
-                ),
+                if (!_isLoading)
+                  Text(
+                    '${_filteredItems.length}개의 옷이 보여요',
+                    style: textTheme.bodyMedium,
+                  ),
               ],
             ),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          sliver: SliverGrid.builder(
-            itemCount: filteredItems.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 0.78,
+        if (_isLoading)
+          const SliverFillRemaining(
+            child: Center(child: CircularProgressIndicator()),
+          )
+        else if (_error != null)
+          SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.wifi_off_outlined, size: 48, color: AppColors.tertiaryText),
+                  const SizedBox(height: 12),
+                  Text('백엔드 연결 실패', style: textTheme.titleMedium),
+                  const SizedBox(height: 6),
+                  Text('localhost:8000 서버가 실행 중인지 확인하세요.', style: textTheme.bodyMedium),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _loadItems,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('다시 시도'),
+                  ),
+                ],
+              ),
             ),
-            itemBuilder: (context, index) => ClothingTile(
-              item: filteredItems[index],
-              onTap: () => _openItemDetail(context, filteredItems[index]),
+          )
+        else if (_filteredItems.isEmpty)
+          SliverFillRemaining(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.checkroom_outlined, size: 56, color: AppColors.tertiaryText),
+                  const SizedBox(height: 12),
+                  Text('아직 옷이 없어요', style: textTheme.titleMedium),
+                  const SizedBox(height: 6),
+                  Text('추가 탭에서 갤러리 이미지를 업로드해보세요.', style: textTheme.bodyMedium),
+                ],
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            sliver: SliverGrid.builder(
+              itemCount: _filteredItems.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                childAspectRatio: 0.78,
+              ),
+              itemBuilder: (context, index) => ApiClothingTile(
+                item: _filteredItems[index],
+              ),
             ),
           ),
-        ),
       ],
     );
   }
 }
 
-class AddItemScreen extends StatelessWidget {
-  const AddItemScreen({super.key});
+class AddItemScreen extends StatefulWidget {
+  const AddItemScreen({super.key, this.onUploadComplete});
+
+  /// 업로드 완료 시 옷장 탭으로 이동하기 위한 콜백
+  final VoidCallback? onUploadComplete;
+
+  @override
+  State<AddItemScreen> createState() => _AddItemScreenState();
+}
+
+class _AddItemScreenState extends State<AddItemScreen> {
+  File? _pickedImage;
+  bool _isUploading = false;
+  String _statusMessage = '';
+
+  final _picker = ImagePicker();
+
+  Future<void> _pickFromGallery() async {
+    final xfile = await _picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 90,
+    );
+    if (xfile == null) return;
+    setState(() {
+      _pickedImage = File(xfile.path);
+      _statusMessage = '';
+    });
+  }
+
+  Future<void> _upload() async {
+    if (_pickedImage == null) return;
+    setState(() { _isUploading = true; _statusMessage = '업로드 중...'; });
+
+    try {
+      // 1. 업로드
+      final taskId = await ClosetApiClient.uploadClothing(
+        imageFile: _pickedImage!,
+        userId: 1,
+      );
+      setState(() => _statusMessage = 'AI 분석 중... (최초 실행 시 1~2분 소요)');
+
+      // 2. 폴링 (2초 간격, 최대 3분)
+      const interval = Duration(seconds: 2);
+      const timeout = Duration(minutes: 3);
+      final deadline = DateTime.now().add(timeout);
+
+      while (DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(interval);
+        final status = await ClosetApiClient.getPipelineStatus(taskId);
+
+        if (status.isDone) {
+          setState(() { _isUploading = false; _statusMessage = '분류 완료!'; });
+          if (mounted) {
+            ScaffoldMessenger.of(context)
+              ..hideCurrentSnackBar()
+              ..showSnackBar(
+                const SnackBar(
+                  content: Text('옷 분류가 완료됐어요 👕  옷장에서 확인하세요!'),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            widget.onUploadComplete?.call();
+          }
+          return;
+        }
+
+        if (status.isFailed) {
+          setState(() {
+            _isUploading = false;
+            _statusMessage = '분석 실패: ${status.error ?? "알 수 없는 오류"}';
+          });
+          return;
+        }
+      }
+
+      // 타임아웃
+      setState(() { _isUploading = false; _statusMessage = '처리 시간이 초과됐어요. 서버를 확인해주세요.'; });
+    } catch (e) {
+      setState(() { _isUploading = false; _statusMessage = '오류: $e'; });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -501,27 +670,61 @@ class AddItemScreen extends StatelessWidget {
       children: [
         Text('옷 추가', style: textTheme.displaySmall),
         const SizedBox(height: 18),
-        const _CameraPreviewMock(),
+
+        // 이미지 미리보기
+        _ImagePreviewArea(pickedImage: _pickedImage),
         const SizedBox(height: 20),
-        FilledButton.icon(
-          onPressed: () => _showFeatureSnack(
-            context,
-            '카메라 화면은 다음 단계에서 실제 camera 패키지와 연결할게요.',
-          ),
-          icon: const Icon(Icons.camera_alt_outlined),
-          label: const Text('옷 촬영하기'),
-        ),
-        const SizedBox(height: 12),
+
+        // 갤러리 버튼
         OutlinedButton.icon(
-          onPressed: () =>
-              _showFeatureSnack(context, '갤러리 선택은 다음 단계에서 이미지 피커와 연결할게요.'),
+          onPressed: _isUploading ? null : _pickFromGallery,
           icon: const Icon(Icons.photo_library_outlined),
           label: const Text('갤러리에서 가져오기'),
         ),
-        const SizedBox(height: 28),
-        Text('AI 분류 초안', style: textTheme.titleLarge),
         const SizedBox(height: 12),
-        const _ClassificationDraft(),
+
+        // 업로드 버튼
+        FilledButton.icon(
+          onPressed: (_pickedImage != null && !_isUploading) ? _upload : null,
+          icon: _isUploading
+              ? const SizedBox(
+                  width: 18, height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                )
+              : const Icon(Icons.auto_awesome_outlined),
+          label: Text(_isUploading ? 'AI 분석 중...' : 'AI로 분류하기'),
+        ),
+
+        // 상태 메시지
+        if (_statusMessage.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: AppColors.groupedBackground,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                if (_isUploading)
+                  const SizedBox(
+                    width: 16, height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                else
+                  Icon(
+                    _statusMessage.contains('완료') ? Icons.check_circle_outline : Icons.info_outline,
+                    size: 16,
+                    color: _statusMessage.contains('완료') ? AppColors.success : AppColors.secondaryText,
+                  ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(_statusMessage, style: textTheme.bodyMedium),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     );
   }
@@ -677,6 +880,161 @@ class ClothingTile extends StatelessWidget {
             Text(item.category, style: textTheme.bodyMedium),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// 백엔드 API 데이터를 표시하는 옷 카드 타일
+class ApiClothingTile extends StatelessWidget {
+  const ApiClothingTile({super.key, required this.item});
+
+  final ClothingApiItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final imageUrl = ClosetApiClient.imageFullUrl(item.imageUrl);
+    final colors = item.tagValues('color');
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                // 배경 플레이스홀더
+                Container(
+                  color: AppColors.groupedBackground,
+                  child: const Center(
+                    child: Icon(Icons.checkroom_outlined, size: 40, color: AppColors.tertiaryText),
+                  ),
+                ),
+                // 크롭 이미지
+                Image.network(
+                  imageUrl,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => Container(
+                    color: AppColors.groupedBackground,
+                    child: const Center(
+                      child: Icon(Icons.broken_image_outlined, size: 40, color: AppColors.tertiaryText),
+                    ),
+                  ),
+                ),
+                // 그라데이션
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withValues(alpha: 0.18),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                // Confidence 배지
+                if (item.confidenceLabel != null)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.82),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        item.confidenceLabel!,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primaryText,
+                        ),
+                      ),
+                    ),
+                  ),
+                // 색상 태그
+                if (colors.isNotEmpty)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Text(
+                        colors.first,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          item.displayName,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: textTheme.titleMedium,
+        ),
+        const SizedBox(height: 2),
+        Text(item.categoryLabel, style: textTheme.bodyMedium),
+      ],
+    );
+  }
+}
+
+/// 갤러리에서 선택한 이미지 미리보기 영역
+class _ImagePreviewArea extends StatelessWidget {
+  const _ImagePreviewArea({required this.pickedImage});
+
+  final File? pickedImage;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 0.82,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: pickedImage != null
+            ? Image.file(pickedImage!, fit: BoxFit.cover)
+            : const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Color(0xFF2E3138), Color(0xFF111111)],
+                  ),
+                ),
+                child: Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.photo_library_outlined, color: Colors.white54, size: 48),
+                      SizedBox(height: 12),
+                      Text(
+                        '갤러리에서 이미지를 선택하세요',
+                        style: TextStyle(color: Colors.white60, fontSize: 14),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -1091,15 +1449,20 @@ class _QuickAction extends StatelessWidget {
 }
 
 class _FilterRow extends StatelessWidget {
-  const _FilterRow({required this.selectedFilter, required this.onSelected});
+  const _FilterRow({
+    required this.selectedFilter,
+    required this.onSelected,
+    required this.filters,
+  });
 
   final String selectedFilter;
   final ValueChanged<String> onSelected;
 
+  /// 표시할 필터 목록 (외부에서 주입, '전체' 포함)
+  final List<String> filters;
+
   @override
   Widget build(BuildContext context) {
-    const filters = ['전체', '아우터', '상의', '하의', '니트', '겨울', '포멀'];
-
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       child: Row(
@@ -1166,123 +1529,7 @@ class _FilterChipButton extends StatelessWidget {
   }
 }
 
-class _CameraPreviewMock extends StatelessWidget {
-  const _CameraPreviewMock();
 
-  @override
-  Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 0.82,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: DecoratedBox(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF2E3138), Color(0xFF111111)],
-            ),
-          ),
-          child: Stack(
-            children: [
-              Positioned.fill(
-                child: CustomPaint(
-                  painter: TextilePainter(const [
-                    Color(0xFF2E3138),
-                    Color(0xFF111111),
-                  ]),
-                ),
-              ),
-              Center(
-                child: Container(
-                  width: 190,
-                  height: 250,
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.white70, width: 2),
-                    borderRadius: BorderRadius.circular(28),
-                  ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.checkroom_outlined,
-                      color: Colors.white,
-                      size: 72,
-                    ),
-                  ),
-                ),
-              ),
-              const Positioned(
-                left: 16,
-                right: 16,
-                bottom: 16,
-                child: Text(
-                  '가이드 안에 옷 한 벌만 맞춰주세요',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ClassificationDraft extends StatelessWidget {
-  const _ClassificationDraft();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.groupedBackground,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Row(
-            children: [
-              Icon(Icons.auto_awesome, color: AppColors.accent),
-              SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  'Fashionpedia 분류 결과',
-                  style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                ),
-              ),
-              TagChip('88%'),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: const [
-              TagChip('셔츠'),
-              TagChip('화이트'),
-              TagChip('코튼'),
-              TagChip('무지'),
-              TagChip('데일리'),
-              TagChip('봄'),
-            ],
-          ),
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: () => _showTagReviewSheet(context),
-            icon: const Icon(Icons.edit_outlined),
-            label: const Text('태그 검토하고 수정하기'),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _PromptBox extends StatelessWidget {
   const _PromptBox();
@@ -1385,51 +1632,7 @@ void _showFeatureSnack(BuildContext context, String message) {
     );
 }
 
-void _showTagReviewSheet(BuildContext context) {
-  showModalBottomSheet<void>(
-    context: context,
-    showDragHandle: true,
-    builder: (context) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('태그 검토', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 8),
-            Text(
-              '지금은 더미 데이터라 저장은 하지 않고, 나중에 FastAPI 저장 요청으로 연결할 자리예요.',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: const [
-                TagChip('셔츠'),
-                TagChip('화이트'),
-                TagChip('코튼'),
-                TagChip('무지'),
-                TagChip('데일리'),
-                TagChip('봄'),
-                TagChip('+ 태그 추가'),
-              ],
-            ),
-            const SizedBox(height: 20),
-            FilledButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-                _showFeatureSnack(context, '태그 수정 흐름을 확인했어요.');
-              },
-              child: const Text('확인'),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+
 
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
