@@ -6,6 +6,8 @@ import 'package:image_picker/image_picker.dart';
 
 import 'models/clothing_api_item.dart';
 import 'services/api_client.dart';
+import 'services/gemini_client.dart';
+import 'services/llm_settings_store.dart';
 
 void main() {
   runApp(const AiClosetApp());
@@ -452,12 +454,25 @@ class _ClosetScreenState extends State<ClosetScreen> {
   }
 
   Future<void> _loadItems() async {
-    setState(() { _isLoading = true; _error = null; });
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
     try {
       final items = await ClosetApiClient.getClothingList(userId: 1);
-      if (mounted) setState(() { _apiItems = items; _isLoading = false; });
+      if (mounted) {
+        setState(() {
+          _apiItems = items;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() { _error = e.toString(); _isLoading = false; });
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -506,7 +521,8 @@ class _ClosetScreenState extends State<ClosetScreen> {
                 _FilterRow(
                   selectedFilter: _selectedFilter,
                   filters: _filters,
-                  onSelected: (filter) => setState(() => _selectedFilter = filter),
+                  onSelected: (filter) =>
+                      setState(() => _selectedFilter = filter),
                 ),
                 const SizedBox(height: 12),
                 if (!_isLoading)
@@ -528,11 +544,13 @@ class _ClosetScreenState extends State<ClosetScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.wifi_off_outlined, size: 48, color: AppColors.tertiaryText),
+                  const Icon(Icons.wifi_off_outlined,
+                      size: 48, color: AppColors.tertiaryText),
                   const SizedBox(height: 12),
                   Text('백엔드 연결 실패', style: textTheme.titleMedium),
                   const SizedBox(height: 6),
-                  Text('localhost:8000 서버가 실행 중인지 확인하세요.', style: textTheme.bodyMedium),
+                  Text('localhost:8000 서버가 실행 중인지 확인하세요.',
+                      style: textTheme.bodyMedium),
                   const SizedBox(height: 16),
                   FilledButton.icon(
                     onPressed: _loadItems,
@@ -549,7 +567,8 @@ class _ClosetScreenState extends State<ClosetScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.checkroom_outlined, size: 56, color: AppColors.tertiaryText),
+                  const Icon(Icons.checkroom_outlined,
+                      size: 56, color: AppColors.tertiaryText),
                   const SizedBox(height: 12),
                   Text('아직 옷이 없어요', style: textTheme.titleMedium),
                   const SizedBox(height: 6),
@@ -610,7 +629,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
 
   Future<void> _upload() async {
     if (_pickedImage == null) return;
-    setState(() { _isUploading = true; _statusMessage = '업로드 중...'; });
+    setState(() {
+      _isUploading = true;
+      _statusMessage = '업로드 중...';
+    });
 
     try {
       // 1. 업로드
@@ -630,7 +652,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
         final status = await ClosetApiClient.getPipelineStatus(taskId);
 
         if (status.isDone) {
-          setState(() { _isUploading = false; _statusMessage = '분류 완료!'; });
+          setState(() {
+            _isUploading = false;
+            _statusMessage = '분류 완료!';
+          });
           if (mounted) {
             ScaffoldMessenger.of(context)
               ..hideCurrentSnackBar()
@@ -655,9 +680,15 @@ class _AddItemScreenState extends State<AddItemScreen> {
       }
 
       // 타임아웃
-      setState(() { _isUploading = false; _statusMessage = '처리 시간이 초과됐어요. 서버를 확인해주세요.'; });
+      setState(() {
+        _isUploading = false;
+        _statusMessage = '처리 시간이 초과됐어요. 서버를 확인해주세요.';
+      });
     } catch (e) {
-      setState(() { _isUploading = false; _statusMessage = '오류: $e'; });
+      setState(() {
+        _isUploading = false;
+        _statusMessage = '오류: $e';
+      });
     }
   }
 
@@ -688,8 +719,10 @@ class _AddItemScreenState extends State<AddItemScreen> {
           onPressed: (_pickedImage != null && !_isUploading) ? _upload : null,
           icon: _isUploading
               ? const SizedBox(
-                  width: 18, height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white),
                 )
               : const Icon(Icons.auto_awesome_outlined),
           label: Text(_isUploading ? 'AI 분석 중...' : 'AI로 분류하기'),
@@ -708,14 +741,19 @@ class _AddItemScreenState extends State<AddItemScreen> {
               children: [
                 if (_isUploading)
                   const SizedBox(
-                    width: 16, height: 16,
+                    width: 16,
+                    height: 16,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 else
                   Icon(
-                    _statusMessage.contains('완료') ? Icons.check_circle_outline : Icons.info_outline,
+                    _statusMessage.contains('완료')
+                        ? Icons.check_circle_outline
+                        : Icons.info_outline,
                     size: 16,
-                    color: _statusMessage.contains('완료') ? AppColors.success : AppColors.secondaryText,
+                    color: _statusMessage.contains('완료')
+                        ? AppColors.success
+                        : AppColors.secondaryText,
                   ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -730,8 +768,69 @@ class _AddItemScreenState extends State<AddItemScreen> {
   }
 }
 
-class AskClosetScreen extends StatelessWidget {
+class AskClosetScreen extends StatefulWidget {
   const AskClosetScreen({super.key});
+
+  @override
+  State<AskClosetScreen> createState() => _AskClosetScreenState();
+}
+
+class _AskClosetScreenState extends State<AskClosetScreen> {
+  final _settingsStore = LlmSettingsStore();
+  final _questionController = TextEditingController();
+
+  bool _isLoading = false;
+  String _answer = '';
+  String? _error;
+
+  @override
+  void dispose() {
+    _questionController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _askGemini() async {
+    final question = _questionController.text.trim();
+    if (question.isEmpty) {
+      setState(() => _error = '질문을 입력해주세요.');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+      _answer = '';
+    });
+
+    try {
+      final apiKey = await _settingsStore.loadGeminiApiKey();
+      if (apiKey.isEmpty) {
+        throw const GeminiException('설정 탭에서 Gemini API 키를 먼저 입력해주세요.');
+      }
+
+      final items = await ClosetApiClient.getClothingList(userId: 1);
+      final answer = await GeminiClient(apiKey: apiKey).askCloset(
+        question: question,
+        closetItems: items,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _answer = answer;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  void _useExample(String question) {
+    _questionController.text = question;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -742,20 +841,109 @@ class AskClosetScreen extends StatelessWidget {
       children: [
         Text('옷장에게 질문', style: textTheme.displaySmall),
         const SizedBox(height: 8),
-        Text('저장된 옷과 상황 정보를 바탕으로 코디를 추천해요.', style: textTheme.bodyMedium),
+        Text('저장된 옷장 데이터를 Gemini에게 보내 코디를 추천받아요.', style: textTheme.bodyMedium),
         const SizedBox(height: 20),
-        const _PromptBox(),
+        _PromptBox(
+          controller: _questionController,
+          isLoading: _isLoading,
+          onSubmit: _askGemini,
+        ),
+        const SizedBox(height: 14),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            ActionChip(
+              avatar: const Icon(Icons.work_outline, size: 18),
+              label: const Text('면접 코디'),
+              onPressed: _isLoading
+                  ? null
+                  : () => _useExample('내일 면접에 단정하게 입을 옷 추천해줘.'),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.wb_sunny_outlined, size: 18),
+              label: const Text('더운 날'),
+              onPressed: _isLoading
+                  ? null
+                  : () => _useExample('더운 날 캠퍼스에서 입기 좋은 조합 알려줘.'),
+            ),
+            ActionChip(
+              avatar: const Icon(Icons.auto_awesome_outlined, size: 18),
+              label: const Text('데이트'),
+              onPressed: _isLoading
+                  ? null
+                  : () => _useExample('주말 데이트에 어울리는 깔끔한 코디 추천해줘.'),
+            ),
+          ],
+        ),
         const SizedBox(height: 24),
-        Text('추천 코디', style: textTheme.titleLarge),
-        const SizedBox(height: 12),
-        _OutfitRecommendation(outfit: mockOutfits.first),
+        if (_isLoading)
+          const _AssistantStatusCard(message: 'Gemini가 옷장 정보를 읽고 있어요...')
+        else if (_error != null)
+          _AssistantStatusCard(message: _error!, isError: true)
+        else if (_answer.isNotEmpty)
+          _AssistantAnswerCard(answer: _answer)
+        else ...[
+          Text('추천 코디', style: textTheme.titleLarge),
+          const SizedBox(height: 12),
+          _OutfitRecommendation(outfit: mockOutfits.first),
+        ],
       ],
     );
   }
 }
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
+
+  @override
+  State<SettingsScreen> createState() => _SettingsScreenState();
+}
+
+class _SettingsScreenState extends State<SettingsScreen> {
+  final _settingsStore = LlmSettingsStore();
+  final _apiKeyController = TextEditingController();
+
+  bool _isLoading = true;
+  bool _obscureApiKey = true;
+  String _saveMessage = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _loadSettings();
+  }
+
+  @override
+  void dispose() {
+    _apiKeyController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadSettings() async {
+    final apiKey = await _settingsStore.loadGeminiApiKey();
+    if (!mounted) return;
+    setState(() {
+      _apiKeyController.text = apiKey;
+      _isLoading = false;
+    });
+  }
+
+  Future<void> _saveSettings() async {
+    await _settingsStore.saveGeminiApiKey(_apiKeyController.text);
+    if (!mounted) return;
+    setState(() => _saveMessage = 'Gemini API 키가 저장됐어요.');
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: const Text('Gemini API 키 저장 완료'),
+          behavior: SnackBarBehavior.floating,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -766,10 +954,62 @@ class SettingsScreen extends StatelessWidget {
       children: [
         Text('설정', style: textTheme.displaySmall),
         const SizedBox(height: 18),
+        _SettingsPanel(
+          icon: Icons.key_outlined,
+          title: 'Gemini API 키',
+          child: _isLoading
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 18),
+                  child: Center(child: CircularProgressIndicator()),
+                )
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    TextField(
+                      controller: _apiKeyController,
+                      obscureText: _obscureApiKey,
+                      autocorrect: false,
+                      enableSuggestions: false,
+                      decoration: InputDecoration(
+                        hintText: 'AIza...',
+                        filled: true,
+                        fillColor: AppColors.background,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide:
+                              const BorderSide(color: AppColors.separator),
+                        ),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            _obscureApiKey
+                                ? Icons.visibility_outlined
+                                : Icons.visibility_off_outlined,
+                          ),
+                          onPressed: () =>
+                              setState(() => _obscureApiKey = !_obscureApiKey),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    FilledButton.icon(
+                      onPressed: _saveSettings,
+                      icon: const Icon(Icons.save_outlined),
+                      label: const Text('저장'),
+                    ),
+                    if (_saveMessage.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Text(_saveMessage,
+                          style: textTheme.bodyMedium
+                              ?.copyWith(color: AppColors.success)),
+                    ],
+                  ],
+                ),
+        ),
+        const SizedBox(height: 12),
         const _SettingsRow(
-          icon: Icons.cloud_outlined,
-          title: 'API 기본 주소',
-          value: '목데이터 모드',
+          icon: Icons.auto_awesome_outlined,
+          title: '질문 기능',
+          value: 'Gemini',
         ),
         const _SettingsRow(
           icon: Icons.tune_outlined,
@@ -818,12 +1058,12 @@ class ClothingTile extends StatelessWidget {
                         fit: BoxFit.cover,
                         frameBuilder:
                             (context, child, frame, wasSynchronouslyLoaded) {
-                              if (wasSynchronouslyLoaded || frame != null) {
-                                return child;
-                              }
+                          if (wasSynchronouslyLoaded || frame != null) {
+                            return child;
+                          }
 
-                              return _ClothingImageFallback(item: item);
-                            },
+                          return _ClothingImageFallback(item: item);
+                        },
                         errorBuilder: (context, error, stackTrace) {
                           return _ClothingImageFallback(item: item);
                         },
@@ -910,7 +1150,8 @@ class ApiClothingTile extends StatelessWidget {
                 Container(
                   color: AppColors.groupedBackground,
                   child: const Center(
-                    child: Icon(Icons.checkroom_outlined, size: 40, color: AppColors.tertiaryText),
+                    child: Icon(Icons.checkroom_outlined,
+                        size: 40, color: AppColors.tertiaryText),
                   ),
                 ),
                 // 크롭 이미지
@@ -920,7 +1161,8 @@ class ApiClothingTile extends StatelessWidget {
                   errorBuilder: (_, __, ___) => Container(
                     color: AppColors.groupedBackground,
                     child: const Center(
-                      child: Icon(Icons.broken_image_outlined, size: 40, color: AppColors.tertiaryText),
+                      child: Icon(Icons.broken_image_outlined,
+                          size: 40, color: AppColors.tertiaryText),
                     ),
                   ),
                 ),
@@ -945,7 +1187,8 @@ class ApiClothingTile extends StatelessWidget {
                     right: 8,
                     top: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
                       decoration: BoxDecoration(
                         color: Colors.white.withValues(alpha: 0.82),
                         borderRadius: BorderRadius.circular(999),
@@ -966,7 +1209,8 @@ class ApiClothingTile extends StatelessWidget {
                     left: 8,
                     bottom: 8,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(
                         color: Colors.black.withValues(alpha: 0.55),
                         borderRadius: BorderRadius.circular(999),
@@ -1025,7 +1269,8 @@ class _ImagePreviewArea extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.photo_library_outlined, color: Colors.white54, size: 48),
+                      Icon(Icons.photo_library_outlined,
+                          color: Colors.white54, size: 48),
                       SizedBox(height: 12),
                       Text(
                         '갤러리에서 이미지를 선택하세요',
@@ -1529,10 +1774,16 @@ class _FilterChipButton extends StatelessWidget {
   }
 }
 
-
-
 class _PromptBox extends StatelessWidget {
-  const _PromptBox();
+  const _PromptBox({
+    required this.controller,
+    required this.isLoading,
+    required this.onSubmit,
+  });
+
+  final TextEditingController controller;
+  final bool isLoading;
+  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
@@ -1542,18 +1793,107 @@ class _PromptBox extends StatelessWidget {
         border: Border.all(color: AppColors.separator),
         borderRadius: BorderRadius.circular(16),
       ),
-      child: const Row(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.search_outlined, color: AppColors.secondaryText),
-          SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              '내일 발표 때 입을 옷 추천해줘',
-              style: TextStyle(fontSize: 17, color: AppColors.primaryText),
+          TextField(
+            controller: controller,
+            minLines: 3,
+            maxLines: 5,
+            textInputAction: TextInputAction.newline,
+            decoration: const InputDecoration(
+              hintText: '예: 내일 발표 때 입을 옷 추천해줘',
+              border: InputBorder.none,
+              prefixIcon:
+                  Icon(Icons.search_outlined, color: AppColors.secondaryText),
             ),
           ),
-          Icon(Icons.mic_none_outlined, color: AppColors.secondaryText),
+          const SizedBox(height: 12),
+          FilledButton.icon(
+            onPressed: isLoading ? null : onSubmit,
+            icon: isLoading
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  )
+                : const Icon(Icons.send_outlined),
+            label: Text(isLoading ? '질문 중...' : 'Gemini에게 질문'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssistantStatusCard extends StatelessWidget {
+  const _AssistantStatusCard({
+    required this.message,
+    this.isError = false,
+  });
+
+  final String message;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isError
+            ? AppColors.danger.withValues(alpha: 0.08)
+            : AppColors.groupedBackground,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (isError)
+            const Icon(Icons.error_outline, color: AppColors.danger)
+          else
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+          const SizedBox(width: 12),
+          Expanded(
+              child:
+                  Text(message, style: Theme.of(context).textTheme.bodyLarge)),
+        ],
+      ),
+    );
+  }
+}
+
+class _AssistantAnswerCard extends StatelessWidget {
+  const _AssistantAnswerCard({required this.answer});
+
+  final String answer;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: AppColors.groupedBackground,
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_awesome, color: AppColors.accent),
+              const SizedBox(width: 8),
+              Text('Gemini 추천', style: textTheme.titleMedium),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Text(answer, style: textTheme.bodyLarge),
         ],
       ),
     );
@@ -1632,8 +1972,6 @@ void _showFeatureSnack(BuildContext context, String message) {
     );
 }
 
-
-
 class _SettingsRow extends StatelessWidget {
   const _SettingsRow({
     required this.icon,
@@ -1665,6 +2003,47 @@ class _SettingsRow extends StatelessWidget {
             ),
           ),
           Text(value, style: Theme.of(context).textTheme.bodyMedium),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsPanel extends StatelessWidget {
+  const _SettingsPanel({
+    required this.icon,
+    required this.title,
+    required this.child,
+  });
+
+  final IconData icon;
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.groupedBackground,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style:
+                    const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          child,
         ],
       ),
     );
