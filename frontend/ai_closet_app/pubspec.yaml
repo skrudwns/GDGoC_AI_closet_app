@@ -44,6 +44,9 @@ dependencies:
   # HTTP multipart MIME 타입 지정
   http_parser: ^4.0.0
 
+  # 로컬 설정 저장
+  shared_preferences: ^2.3.3
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
