@@ -104,7 +104,7 @@ class PipelineStatus {
   });
 
   final String taskId;
-  final String status;   // pending | processing | done | failed
+  final String status; // pending | processing | done | failed
   final List<int> clothingIds;
   final String? error;
 
