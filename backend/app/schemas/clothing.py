@@ -82,6 +82,13 @@ class ClothingResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ClothingUpdate(BaseModel):
+    """의류 정보 수정 요청 스키마 (PATCH — 모든 필드 선택)"""
+    category: Optional[str] = None
+    sub_category: Optional[str] = None
+    pattern: Optional[str] = None
+
+
 class ClothingListResponse(BaseModel):
     """의류 목록 조회 응답"""
     total: int

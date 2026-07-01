@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -184,7 +185,7 @@ const mockItems = [
     tags: ['포멀', '겨울', '미니멀'],
     confidence: 0.94,
     imageUrl:
-        'https://images.unsplash.com/photo-1591047139829-d91aecb6caea?auto=format&fit=crop&w=900&q=80',
+        '',
     materials: ['울', '안감 있음'],
     seasons: ['가을', '겨울'],
     occasions: ['발표', '면접', '격식'],
@@ -198,7 +199,7 @@ const mockItems = [
     tags: ['데일리', '깔끔함', '봄'],
     confidence: 0.91,
     imageUrl:
-        'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?auto=format&fit=crop&w=900&q=80',
+        '',
     materials: ['코튼'],
     seasons: ['봄', '여름', '가을'],
     occasions: ['데일리', '발표', '레이어드'],
@@ -212,7 +213,7 @@ const mockItems = [
     tags: ['캐주얼', '무지', '사계절'],
     confidence: 0.88,
     imageUrl:
-        'https://images.unsplash.com/photo-1542272604-787c3835535d?auto=format&fit=crop&w=900&q=80',
+        '',
     materials: ['데님', '코튼'],
     seasons: ['사계절'],
     occasions: ['데일리', '캠퍼스', '캐주얼'],
@@ -226,7 +227,7 @@ const mockItems = [
     tags: ['따뜻함', '부드러움', '가을'],
     confidence: 0.86,
     imageUrl:
-        'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?auto=format&fit=crop&w=900&q=80',
+        '',
     materials: ['니트', '울 블렌드'],
     seasons: ['가을', '겨울'],
     occasions: ['카페', '캠퍼스', '데일리'],
@@ -240,7 +241,7 @@ const mockItems = [
     tags: ['포멀', '플리츠', '데일리'],
     confidence: 0.9,
     imageUrl:
-        'https://images.unsplash.com/photo-1539533018447-63fcce2678e3?auto=format&fit=crop&w=900&q=80',
+        '',
     materials: ['폴리', '플리츠'],
     seasons: ['봄', '가을'],
     occasions: ['발표', '모임', '데일리'],
@@ -254,7 +255,7 @@ const mockItems = [
     tags: ['캐주얼', '봄', '유틸리티'],
     confidence: 0.84,
     imageUrl:
-        'https://images.unsplash.com/photo-1551232864-3f0890e580d9?auto=format&fit=crop&w=900&q=80',
+        '',
     materials: ['코튼', '나일론'],
     seasons: ['봄', '가을'],
     occasions: ['산책', '여행', '캐주얼'],
@@ -290,28 +291,45 @@ class ClosetShell extends StatefulWidget {
 
 class _ClosetShellState extends State<ClosetShell> {
   int _selectedIndex = 0;
+  ClothingApiItem? _askItem;
 
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      HomeScreen(
-        onCapture: () => setState(() => _selectedIndex = 2),
-        onAsk: () => setState(() => _selectedIndex = 3),
-      ),
-      const ClosetScreen(),
-      AddItemScreen(
-        onUploadComplete: () => setState(() => _selectedIndex = 1),
-      ),
-      const AskClosetScreen(),
-      const SettingsScreen(),
-    ];
-
     return Scaffold(
-      // IndexedStack: 모든 탭을 메모리에 유지 → 탭 전환 시 State 보존
+      // Offstage + TickerMode: IndexedStack와 동일하게 State를 유지하지만
+      // 각 화면이 독립적인 크기 제약을 받아 스크롤이 정상 동작합니다.
       body: SafeArea(
-        child: IndexedStack(
-          index: _selectedIndex,
-          children: screens,
+        child: Stack(
+          children: [
+            _buildTab(0, HomeScreen(
+              onCapture: () => setState(() => _selectedIndex = 2),
+              onAsk: () => setState(() {
+                _askItem = null;
+                _selectedIndex = 3;
+              }),
+              onAskWithItem: (item) => setState(() {
+                _askItem = item;
+                _selectedIndex = 3;
+              }),
+            )),
+            _buildTab(1, ClosetScreen(
+              onAskWithItem: (item) {
+                print('DEBUG: ClosetShellState onAskWithItem called for tab 1');
+                setState(() {
+                  _askItem = item;
+                  _selectedIndex = 3;
+                });
+              },
+            )),
+            _buildTab(2, AddItemScreen(
+              onUploadComplete: () => setState(() => _selectedIndex = 1),
+            )),
+            _buildTab(3, AskClosetScreen(
+              targetItem: _askItem,
+              onClearTarget: () => setState(() => _askItem = null),
+            )),
+            _buildTab(4, const SettingsScreen()),
+          ],
         ),
       ),
       bottomNavigationBar: NavigationBar(
@@ -349,19 +367,65 @@ class _ClosetShellState extends State<ClosetShell> {
       ),
     );
   }
+
+  Widget _buildTab(int index, Widget child) {
+    final isActive = _selectedIndex == index;
+    return Offstage(
+      offstage: !isActive,
+      child: TickerMode(
+        enabled: isActive,
+        child: child,
+      ),
+    );
+  }
 }
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key, required this.onCapture, required this.onAsk});
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key, required this.onCapture, required this.onAsk, required this.onAskWithItem});
 
   final VoidCallback onCapture;
   final VoidCallback onAsk;
+  final void Function(ClothingApiItem) onAskWithItem;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  List<ClothingApiItem> _recentItems = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecentItems();
+  }
+
+  Future<void> _loadRecentItems() async {
+    try {
+      final items = await ClosetApiClient.getClothingList(userId: 1);
+      // 최신 순으로 정렬하여 최대 4개만 표시
+      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      if (mounted) {
+        setState(() {
+          _recentItems = items.take(4).toList();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
     return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 12),
@@ -372,11 +436,11 @@ class HomeScreen extends StatelessWidget {
                 Text('AI 옷장', style: textTheme.displaySmall),
                 const SizedBox(height: 8),
                 Text(
-                  '샘플 옷 ${mockItems.length}개 · 추천 코디 ${mockOutfits.length}개',
+                  _isLoading
+                      ? '옷장 정보를 불러오는 중...'
+                      : '내 옷 ${_recentItems.length}개',
                   style: textTheme.bodyMedium,
                 ),
-                const SizedBox(height: 24),
-                _TodayPanel(outfit: mockOutfits.first),
               ],
             ),
           ),
@@ -391,7 +455,7 @@ class HomeScreen extends StatelessWidget {
                     icon: Icons.camera_alt_outlined,
                     label: '촬영',
                     subtitle: '옷 추가하기',
-                    onTap: onCapture,
+                    onTap: widget.onCapture,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -400,7 +464,7 @@ class HomeScreen extends StatelessWidget {
                     icon: Icons.chat_bubble_outline,
                     label: '옷장에게 질문',
                     subtitle: '코디 추천받기',
-                    onTap: onAsk,
+                    onTap: widget.onAsk,
                   ),
                 ),
               ],
@@ -413,29 +477,62 @@ class HomeScreen extends StatelessWidget {
             child: Text('최근 추가한 옷', style: textTheme.titleLarge),
           ),
         ),
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
-          sliver: SliverGrid.builder(
-            itemCount: 4,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              mainAxisSpacing: 16,
-              crossAxisSpacing: 16,
-              childAspectRatio: 0.78,
+        if (_isLoading)
+          const SliverPadding(
+            padding: EdgeInsets.all(40),
+            sliver: SliverToBoxAdapter(
+              child: Center(child: CircularProgressIndicator()),
             ),
-            itemBuilder: (context, index) => ClothingTile(
-              item: mockItems[index],
-              onTap: () => _openItemDetail(context, mockItems[index]),
+          )
+        else if (_recentItems.isEmpty)
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+            sliver: SliverToBoxAdapter(
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: AppColors.groupedBackground,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Column(
+                  children: [
+                    const Icon(Icons.checkroom_outlined,
+                        size: 48, color: AppColors.tertiaryText),
+                    const SizedBox(height: 12),
+                    Text('아직 옷이 없어요', style: textTheme.titleMedium),
+                    const SizedBox(height: 6),
+                    Text('추가 탭에서 옷 사진을 업로드해보세요.',
+                        style: textTheme.bodyMedium),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+            sliver: SliverGrid.builder(
+              itemCount: _recentItems.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                mainAxisSpacing: 16,
+                crossAxisSpacing: 16,
+                childAspectRatio: 0.78,
+              ),
+              itemBuilder: (context, index) => ApiClothingTile(
+                item: _recentItems[index],
+                onAsk: widget.onAskWithItem,
+              ),
             ),
           ),
-        ),
       ],
     );
   }
 }
 
 class ClosetScreen extends StatefulWidget {
-  const ClosetScreen({super.key});
+  const ClosetScreen({super.key, this.onAskWithItem});
+  final void Function(ClothingApiItem)? onAskWithItem;
 
   @override
   State<ClosetScreen> createState() => _ClosetScreenState();
@@ -500,6 +597,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
     final textTheme = Theme.of(context).textTheme;
 
     return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       slivers: [
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
@@ -590,6 +688,7 @@ class _ClosetScreenState extends State<ClosetScreen> {
               ),
               itemBuilder: (context, index) => ApiClothingTile(
                 item: _filteredItems[index],
+                onAsk: widget.onAskWithItem,
               ),
             ),
           ),
@@ -769,7 +868,9 @@ class _AddItemScreenState extends State<AddItemScreen> {
 }
 
 class AskClosetScreen extends StatefulWidget {
-  const AskClosetScreen({super.key});
+  const AskClosetScreen({super.key, this.targetItem, this.onClearTarget});
+  final ClothingApiItem? targetItem;
+  final VoidCallback? onClearTarget;
 
   @override
   State<AskClosetScreen> createState() => _AskClosetScreenState();
@@ -780,7 +881,8 @@ class _AskClosetScreenState extends State<AskClosetScreen> {
   final _questionController = TextEditingController();
 
   bool _isLoading = false;
-  String _answer = '';
+  List<GeminiRecommendation> _recommendations = [];
+  List<ClothingApiItem> _allClosetItems = [];
   String? _error;
 
   @override
@@ -799,7 +901,7 @@ class _AskClosetScreenState extends State<AskClosetScreen> {
     setState(() {
       _isLoading = true;
       _error = null;
-      _answer = '';
+      _recommendations = [];
     });
 
     try {
@@ -808,15 +910,72 @@ class _AskClosetScreenState extends State<AskClosetScreen> {
         throw const GeminiException('설정 탭에서 Gemini API 키를 먼저 입력해주세요.');
       }
 
-      final items = await ClosetApiClient.getClothingList(userId: 1);
+      // 1. 날씨 정보 가져오기
+      WeatherInfo? weather;
+      try {
+        weather = await ClosetApiClient.getWeather();
+      } catch (weatherErr) {
+        debugPrint('날씨 호출 실패 (Mock Fallback 동작 예정): $weatherErr');
+      }
+
+      // 2. 옷 목록 가져오기
+      final allItems = await ClosetApiClient.getClothingList(userId: 1);
+      _allClosetItems = allItems;
+      var items = List<ClothingApiItem>.from(allItems);
+
+      // 3. 날씨 기온 기반으로 클라이언트 사이드 옷 필터링 (부하 감소)
+      if (weather != null) {
+        items = _filterItemsByWeather(items, weather.temp);
+        // 타겟 아이템이 필터링으로 날아갔다면 강제로 부활시킴
+        if (widget.targetItem != null && !items.any((i) => i.clothId == widget.targetItem!.clothId)) {
+          items.add(widget.targetItem!);
+        }
+      }
+
+      // 4. Gemini에 질문 전송
       final answer = await GeminiClient(apiKey: apiKey).askCloset(
         question: question,
         closetItems: items,
+        weatherInfo: weather?.summary,
+        targetItem: widget.targetItem,
       );
+
+      // 5. JSON 응답 파싱
+      List<GeminiRecommendation> recommendations = [];
+      try {
+        // Gemini가 ```json ... ``` 으로 감싸는 경우 대비 정리
+        var cleaned = answer.trim();
+        if (cleaned.startsWith('```')) {
+          cleaned = cleaned
+              .replaceFirst(RegExp(r'^```json?\s*'), '')
+              .replaceFirst(RegExp(r'```\s*$'), '')
+              .trim();
+        }
+        final parsed = jsonDecode(cleaned);
+        if (parsed is Map<String, dynamic> && parsed.containsKey('recommendations')) {
+          final list = parsed['recommendations'] as List<dynamic>;
+          recommendations = list
+              .map((e) => GeminiRecommendation.fromJson(e as Map<String, dynamic>))
+              .toList();
+        } else if (parsed is Map<String, dynamic>) {
+          recommendations = [GeminiRecommendation.fromJson(parsed)];
+        }
+      } catch (e, st) {
+        debugPrint('Gemini JSON 파싱 실패: $e\n$st');
+        // JSON 파싱 실패 시 일반 텍스트 응답을 폴백 추천 객체로 포장
+        recommendations = [
+          GeminiRecommendation(
+            name: '추천 코디',
+            itemIds: [],
+            reason: answer,
+            tip: '',
+          )
+        ];
+      }
 
       if (!mounted) return;
       setState(() {
-        _answer = answer;
+        _recommendations = recommendations;
         _isLoading = false;
       });
     } catch (e) {
@@ -828,6 +987,37 @@ class _AskClosetScreenState extends State<AskClosetScreen> {
     }
   }
 
+  List<ClothingApiItem> _filterItemsByWeather(List<ClothingApiItem> items, double temp) {
+    // 옷 개수가 적으면 필터링하지 않고 전부 보냅니다.
+    if (items.length <= 12) return items;
+
+    return items.where((item) {
+      final subCategory = item.subCategory?.toLowerCase() ?? '';
+      final category = item.category?.toLowerCase() ?? '';
+
+      // 여름 날씨 (23도 이상): 아우터(코트, 무거운 패딩/재킷) 및 니트/스웨터류 제외
+      if (temp >= 23.0) {
+        if (subCategory.contains('코트') ||
+            subCategory.contains('패딩') ||
+            subCategory.contains('스웨터') ||
+            category.contains('니트') ||
+            (category.contains('아우터') && (subCategory.contains('코트') || subCategory.contains('재킷') && !subCategory.contains('가벼운')))) {
+          return false;
+        }
+      }
+      // 겨울 날씨 (9도 이하): 가벼운 여름 옷(반바지, 민소매) 제외
+      if (temp <= 9.0) {
+        if (subCategory.contains('반바지') ||
+            subCategory.contains('민소매') ||
+            subCategory.contains('쇼츠') ||
+            subCategory.contains('나시')) {
+          return false;
+        }
+      }
+      return true;
+    }).toList();
+  }
+
   void _useExample(String question) {
     _questionController.text = question;
   }
@@ -836,58 +1026,315 @@ class _AskClosetScreenState extends State<AskClosetScreen> {
   Widget build(BuildContext context) {
     final textTheme = Theme.of(context).textTheme;
 
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-      children: [
-        Text('옷장에게 질문', style: textTheme.displaySmall),
-        const SizedBox(height: 8),
-        Text('저장된 옷장 데이터를 Gemini에게 보내 코디를 추천받아요.', style: textTheme.bodyMedium),
-        const SizedBox(height: 20),
-        _PromptBox(
-          controller: _questionController,
-          isLoading: _isLoading,
-          onSubmit: _askGemini,
-        ),
-        const SizedBox(height: 14),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            ActionChip(
-              avatar: const Icon(Icons.work_outline, size: 18),
-              label: const Text('면접 코디'),
-              onPressed: _isLoading
-                  ? null
-                  : () => _useExample('내일 면접에 단정하게 입을 옷 추천해줘.'),
+    return SafeArea(
+      child: Column(
+        children: [
+          // 상단: 답변 영역 (챗봇처럼 위에서부터 스크롤 가능하게 출력)
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
+              children: [
+                Text('옷장에게 질문', style: textTheme.displaySmall),
+                const SizedBox(height: 8),
+                Text('저장된 옷장 데이터를 기반으로 날씨와 TPO에 알맞은 코디를 제안합니다.', style: textTheme.bodyMedium),
+                const SizedBox(height: 24),
+                
+                if (_isLoading)
+                  const _AssistantStatusCard(message: 'Gemini가 옷장 데이터를 분석하여 답변을 구성하고 있어요...')
+                else if (_error != null)
+                  _AssistantStatusCard(message: _error!, isError: true)
+                else if (_recommendations.isNotEmpty)
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: _recommendations
+                        .map((rec) => _GeminiRecommendationCard(
+                              recommendation: rec,
+                              closetItems: _allClosetItems,
+                            ))
+                        .toList(),
+                  )
+                else ...[
+                  // 초기 상태 화면 (기존 목 코디 1개 표시)
+                  Text('추천 코디 예시', style: textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  _OutfitRecommendation(outfit: mockOutfits.first),
+                ],
+              ],
             ),
-            ActionChip(
-              avatar: const Icon(Icons.wb_sunny_outlined, size: 18),
-              label: const Text('더운 날'),
-              onPressed: _isLoading
-                  ? null
-                  : () => _useExample('더운 날 캠퍼스에서 입기 좋은 조합 알려줘.'),
+          ),
+
+          // 하단: 질문 입력 및 칩 영역 (챗봇 스타일로 하단 고정)
+          Container(
+            padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+            decoration: const BoxDecoration(
+              color: AppColors.background,
+              border: Border(
+                top: BorderSide(color: AppColors.separator, width: 0.5),
+              ),
             ),
-            ActionChip(
-              avatar: const Icon(Icons.auto_awesome_outlined, size: 18),
-              label: const Text('데이트'),
-              onPressed: _isLoading
-                  ? null
-                  : () => _useExample('주말 데이트에 어울리는 깔끔한 코디 추천해줘.'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 질문 바로 위의 추천 질문 Action 칩 세트 (가로 스크롤 지원)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.work_outline, size: 16),
+                        label: const Text('면접 코디'),
+                        onPressed: _isLoading
+                            ? null
+                            : () => _useExample('내일 면접에 단정하게 입을 옷 추천해줘.'),
+                      ),
+                      const SizedBox(width: 8),
+                      ActionChip(
+                        avatar: const Icon(Icons.wb_sunny_outlined, size: 16),
+                        label: const Text('더운 날'),
+                        onPressed: _isLoading
+                            ? null
+                            : () => _useExample('더운 날 캠퍼스에서 입기 좋은 조합 알려줘.'),
+                      ),
+                      const SizedBox(width: 8),
+                      ActionChip(
+                        avatar: const Icon(Icons.auto_awesome_outlined, size: 16),
+                        label: const Text('데이트'),
+                        onPressed: _isLoading
+                            ? null
+                            : () => _useExample('주말 데이트에 어울리는 깔끔한 코디 추천해줘.'),
+                      ),
+                    ],
+                  ),
+                ),
+                if (widget.targetItem != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12.0),
+                    child: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: AppColors.groupedBackground,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: AppColors.separator, width: 0.5),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: widget.targetItem!.imageUrl.isNotEmpty
+                                ? Image.network(
+                                    ClosetApiClient.imageFullUrl(widget.targetItem!.imageUrl),
+                                    width: 48,
+                                    height: 48,
+                                    fit: BoxFit.cover,
+                                  )
+                                : Container(
+                                    width: 48,
+                                    height: 48,
+                                    color: AppColors.background,
+                                    child: const Icon(Icons.checkroom),
+                                  ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '필수 포함 아이템',
+                                  style: TextStyle(fontSize: 12, color: AppColors.tertiaryText),
+                                ),
+                                Text(
+                                  widget.targetItem!.displayName,
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20),
+                            onPressed: widget.onClearTarget,
+                            color: AppColors.secondaryText,
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                // 프롬프트 입력창
+                _PromptBox(
+                  controller: _questionController,
+                  isLoading: _isLoading,
+                  onSubmit: _askGemini,
+                ),
+              ],
             ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        if (_isLoading)
-          const _AssistantStatusCard(message: 'Gemini가 옷장 정보를 읽고 있어요...')
-        else if (_error != null)
-          _AssistantStatusCard(message: _error!, isError: true)
-        else if (_answer.isNotEmpty)
-          _AssistantAnswerCard(answer: _answer)
-        else ...[
-          Text('추천 코디', style: textTheme.titleLarge),
-          const SizedBox(height: 12),
-          _OutfitRecommendation(outfit: mockOutfits.first),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class GeminiRecommendation {
+  const GeminiRecommendation({
+    required this.name,
+    required this.itemIds,
+    required this.reason,
+    required this.tip,
+  });
+
+  final String name;
+  final List<int> itemIds;
+  final String reason;
+  final String tip;
+
+  factory GeminiRecommendation.fromJson(Map<String, dynamic> json) {
+    return GeminiRecommendation(
+      name: json['name'] as String? ?? '추천 코디',
+      itemIds: (json['item_ids'] as List<dynamic>?)
+              ?.map((e) => (e as num).toInt())
+              .toList() ??
+          [],
+      reason: json['reason'] as String? ?? '',
+      tip: json['tip'] as String? ?? '',
+    );
+  }
+}
+
+class _GeminiRecommendationCard extends StatelessWidget {
+  const _GeminiRecommendationCard({
+    required this.recommendation,
+    required this.closetItems,
+  });
+
+  final GeminiRecommendation recommendation;
+  final List<ClothingApiItem> closetItems;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    // 추천된 cloth_id와 일치하는 실제 API 아이템 필터링
+    final matchedItems = closetItems
+        .where((item) => recommendation.itemIds.contains(item.clothId))
+        .toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: AppColors.groupedBackground,
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.auto_awesome, color: AppColors.accent, size: 20),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      recommendation.name,
+                      style: textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // 추천된 실제 의류가 매칭된 경우 이미지 슬라이더 표시
+              if (matchedItems.isNotEmpty) ...[
+                SizedBox(
+                  height: 152,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: matchedItems.length,
+                    separatorBuilder: (context, index) => const SizedBox(width: 12),
+                    itemBuilder: (context, index) => SizedBox(
+                      width: 112,
+                      child: _ClothingApiItemTile(item: matchedItems[index]),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              Text('추천 이유', style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              Text(recommendation.reason, style: textTheme.bodyLarge),
+              
+              if (recommendation.tip.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text('스타일링 팁', style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 4),
+                Text(recommendation.tip, style: textTheme.bodyLarge),
+              ],
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+      ],
+    );
+  }
+}
+
+class _ClothingApiItemTile extends StatelessWidget {
+  const _ClothingApiItemTile({required this.item});
+
+  final ClothingApiItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: Image.network(
+              ClosetApiClient.imageFullUrl(item.imageUrl),
+              fit: BoxFit.cover,
+              width: double.infinity,
+              errorBuilder: (context, error, stackTrace) => Container(
+                color: AppColors.separator.withOpacity(0.3),
+                child: const Icon(
+                  Icons.broken_image_outlined,
+                  color: AppColors.secondaryText,
+                ),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          item.displayName,
+          style: textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: AppColors.primaryText,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        Text(
+          item.categoryLabel,
+          style: textTheme.bodySmall?.copyWith(
+            color: AppColors.secondaryText,
+          ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
       ],
     );
   }
@@ -1052,23 +1499,23 @@ class ClothingTile extends StatelessWidget {
                   fit: StackFit.expand,
                   children: [
                     Positioned.fill(child: _ClothingImageFallback(item: item)),
-                    Positioned.fill(
-                      child: Image.network(
-                        item.imageUrl,
-                        fit: BoxFit.cover,
-                        frameBuilder:
-                            (context, child, frame, wasSynchronouslyLoaded) {
-                          if (wasSynchronouslyLoaded || frame != null) {
-                            return child;
-                          }
-
-                          return _ClothingImageFallback(item: item);
-                        },
-                        errorBuilder: (context, error, stackTrace) {
-                          return _ClothingImageFallback(item: item);
-                        },
+                    if (item.imageUrl.isNotEmpty)
+                      Positioned.fill(
+                        child: Image.network(
+                          item.imageUrl,
+                          fit: BoxFit.cover,
+                          frameBuilder:
+                              (context, child, frame, wasSynchronouslyLoaded) {
+                            if (wasSynchronouslyLoaded || frame != null) {
+                              return child;
+                            }
+                            return _ClothingImageFallback(item: item);
+                          },
+                          errorBuilder: (context, error, stackTrace) {
+                            return _ClothingImageFallback(item: item);
+                          },
+                        ),
                       ),
-                    ),
                     Positioned.fill(
                       child: DecoratedBox(
                         decoration: BoxDecoration(
@@ -1127,9 +1574,10 @@ class ClothingTile extends StatelessWidget {
 
 /// 백엔드 API 데이터를 표시하는 옷 카드 타일
 class ApiClothingTile extends StatelessWidget {
-  const ApiClothingTile({super.key, required this.item});
+  const ApiClothingTile({super.key, required this.item, this.onAsk});
 
   final ClothingApiItem item;
+  final void Function(ClothingApiItem)? onAsk;
 
   @override
   Widget build(BuildContext context) {
@@ -1137,108 +1585,116 @@ class ApiClothingTile extends StatelessWidget {
     final imageUrl = ClosetApiClient.imageFullUrl(item.imageUrl);
     final colors = item.tagValues('color');
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(12),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                // 배경 플레이스홀더
-                Container(
-                  color: AppColors.groupedBackground,
-                  child: const Center(
-                    child: Icon(Icons.checkroom_outlined,
-                        size: 40, color: AppColors.tertiaryText),
-                  ),
-                ),
-                // 크롭 이미지
-                Image.network(
-                  imageUrl,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: AppColors.groupedBackground,
-                    child: const Center(
-                      child: Icon(Icons.broken_image_outlined,
-                          size: 40, color: AppColors.tertiaryText),
-                    ),
-                  ),
-                ),
-                // 그라데이션
-                Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          Colors.black.withValues(alpha: 0.18),
-                        ],
+    return Semantics(
+      button: true,
+      label: '${item.displayName} 상세 보기',
+      child: InkWell(
+        onTap: () => _openApiItemDetail(context, item, onAsk: onAsk),
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // 배경 플레이스홀더
+                    Container(
+                      color: AppColors.groupedBackground,
+                      child: const Center(
+                        child: Icon(Icons.checkroom_outlined,
+                            size: 40, color: AppColors.tertiaryText),
                       ),
                     ),
-                  ),
-                ),
-                // Confidence 배지
-                if (item.confidenceLabel != null)
-                  Positioned(
-                    right: 8,
-                    top: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.82),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        item.confidenceLabel!,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primaryText,
+                    // 크롭 이미지
+                    Image.network(
+                      imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: AppColors.groupedBackground,
+                        child: const Center(
+                          child: Icon(Icons.broken_image_outlined,
+                              size: 40, color: AppColors.tertiaryText),
                         ),
                       ),
                     ),
-                  ),
-                // 색상 태그
-                if (colors.isNotEmpty)
-                  Positioned(
-                    left: 8,
-                    bottom: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                      child: Text(
-                        colors.first,
-                        style: const TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.white,
+                    // 그라데이션
+                    Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withValues(alpha: 0.18),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
+                    // Confidence 배지
+                    if (item.confidenceLabel != null)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.82),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            item.confidenceLabel!,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.primaryText,
+                            ),
+                          ),
+                        ),
+                      ),
+                    // 색상 태그
+                    if (colors.isNotEmpty)
+                      Positioned(
+                        left: 8,
+                        bottom: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.55),
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                          child: Text(
+                            colors.first,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
             ),
-          ),
+            const SizedBox(height: 8),
+            Text(
+              item.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: textTheme.titleMedium,
+            ),
+            const SizedBox(height: 2),
+            Text(item.categoryLabel, style: textTheme.bodyMedium),
+          ],
         ),
-        const SizedBox(height: 8),
-        Text(
-          item.displayName,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: textTheme.titleMedium,
-        ),
-        const SizedBox(height: 2),
-        Text(item.categoryLabel, style: textTheme.bodyMedium),
-      ],
+      ),
     );
   }
 }
@@ -1297,6 +1753,7 @@ class ClothingDetailScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: AppColors.background,
       body: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
           SliverAppBar(
             pinned: true,
@@ -1308,13 +1765,14 @@ class ClothingDetailScreen extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   _ClothingImageFallback(item: item),
-                  Image.network(
-                    item.imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return _ClothingImageFallback(item: item);
-                    },
-                  ),
+                  if (item.imageUrl.isNotEmpty)
+                    Image.network(
+                      item.imageUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (context, error, stackTrace) {
+                        return _ClothingImageFallback(item: item);
+                      },
+                    ),
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -1513,6 +1971,331 @@ void _openItemDetail(BuildContext context, ClothingItem item) {
   Navigator.of(context).push(
     MaterialPageRoute(builder: (context) => ClothingDetailScreen(item: item)),
   );
+}
+
+Future<void> _openApiItemDetail(BuildContext context, ClothingApiItem item, {void Function(ClothingApiItem)? onAsk}) async {
+  print('DEBUG: _openApiItemDetail called with onAsk: $onAsk');
+  final result = await Navigator.of(context).push(
+    MaterialPageRoute(builder: (context) => ApiClothingDetailScreen(item: item)),
+  );
+  print('DEBUG: _openApiItemDetail result: $result, is ClothingApiItem: ${result is ClothingApiItem}, onAsk: $onAsk');
+  if (result is ClothingApiItem && onAsk != null) {
+    print('DEBUG: _openApiItemDetail calling onAsk!');
+    onAsk(result);
+  }
+}
+
+class ApiClothingDetailScreen extends StatefulWidget {
+  const ApiClothingDetailScreen({super.key, required this.item});
+
+  final ClothingApiItem item;
+
+  @override
+  State<ApiClothingDetailScreen> createState() =>
+      _ApiClothingDetailScreenState();
+}
+
+class _ApiClothingDetailScreenState extends State<ApiClothingDetailScreen> {
+  late ClothingApiItem _item;
+  bool _isBusy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _item = widget.item;
+  }
+
+  // ─── 삭제 ───────────────────────────────────────────────────
+  Future<void> _deleteItem() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('옷 삭제'),
+        content: Text('"${_item.displayName}"을(를)\n정말 삭제할까요?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('삭제'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+
+    setState(() => _isBusy = true);
+    try {
+      await ClosetApiClient.deleteClothing(clothId: _item.clothId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('삭제되었습니다.')),
+        );
+        Navigator.of(context).pop(true); // pop → true = 목록 갱신 신호
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isBusy = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('삭제 실패: $e')),
+        );
+      }
+    }
+  }
+
+  // ─── 수정 ───────────────────────────────────────────────────
+  Future<void> _editItem() async {
+    final catCtrl = TextEditingController(text: _item.category ?? '');
+    final subCtrl = TextEditingController(text: _item.subCategory ?? '');
+    final patCtrl = TextEditingController(text: _item.pattern ?? '');
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('정보 수정'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: catCtrl,
+                decoration: const InputDecoration(
+                  labelText: '카테고리',
+                  hintText: '예: 상의, 하의, 아우터',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: subCtrl,
+                decoration: const InputDecoration(
+                  labelText: '세부 분류',
+                  hintText: '예: 셔츠, 슬랙스, 패딩',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: patCtrl,
+                decoration: const InputDecoration(
+                  labelText: '패턴',
+                  hintText: '예: 무지, 스트라이프, 체크',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('취소'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('저장'),
+          ),
+        ],
+      ),
+    );
+
+    if (saved != true || !mounted) return;
+
+    setState(() => _isBusy = true);
+    try {
+      final updated = await ClosetApiClient.updateClothing(
+        clothId: _item.clothId,
+        category: catCtrl.text.trim().isEmpty ? null : catCtrl.text.trim(),
+        subCategory: subCtrl.text.trim().isEmpty ? null : subCtrl.text.trim(),
+        pattern: patCtrl.text.trim().isEmpty ? null : patCtrl.text.trim(),
+      );
+      if (mounted) {
+        setState(() {
+          _item = updated;
+          _isBusy = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('수정되었습니다.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isBusy = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('수정 실패: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
+    final imageUrl = ClosetApiClient.imageFullUrl(_item.imageUrl);
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: CustomScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          SliverAppBar(
+            pinned: true,
+            expandedHeight: 360,
+            backgroundColor: AppColors.background,
+            foregroundColor: AppColors.primaryText,
+            // 앱바 우측 삭제 버튼
+            actions: [
+              if (_isBusy)
+                const Padding(
+                  padding: EdgeInsets.only(right: 16),
+                  child: Center(
+                    child: SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                  ),
+                )
+              else
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  tooltip: '삭제',
+                  onPressed: _deleteItem,
+                ),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  // 배경 플레이스홀더
+                  Container(
+                    color: AppColors.groupedBackground,
+                    child: const Center(
+                      child: Icon(Icons.checkroom_outlined,
+                          size: 56, color: AppColors.tertiaryText),
+                    ),
+                  ),
+                  // 네트워크 이미지
+                  Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: AppColors.groupedBackground,
+                      child: const Center(
+                        child: Icon(Icons.broken_image_outlined,
+                            size: 56, color: AppColors.tertiaryText),
+                      ),
+                    ),
+                  ),
+                  // 그라데이션 오버레이
+                  const DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Color(0x60000000),
+                        ],
+                      ),
+                    ),
+                  ),
+                  // 이름 & 카테고리 pill
+                  Positioned(
+                    left: 20,
+                    right: 20,
+                    bottom: 22,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _item.displayName,
+                          style: textTheme.headlineMedium?.copyWith(
+                            color: Colors.white,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        _DetailPill(_item.categoryLabel),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+            sliver: SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _DetailSection(
+                    title: '기본 정보',
+                    children: [
+                      _InfoRow(label: '카테고리', value: _item.categoryLabel),
+                      _InfoRow(
+                          label: '세부 분류', value: _item.subCategory ?? '-'),
+                      _InfoRow(label: '패턴', value: _item.pattern ?? '-'),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  _DetailSection(
+                    title: 'AI 분석',
+                    children: [
+                      _InfoRow(
+                          label: 'AI 신뢰도',
+                          value: _item.confidenceLabel ?? '-'),
+                      _InfoRow(
+                          label: '파이프라인 상태',
+                          value: _item.pipelineStatus),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text('태그', style: textTheme.titleLarge),
+                  const SizedBox(height: 12),
+                  _item.tags.isEmpty
+                      ? Text('태그 없음', style: textTheme.bodyMedium)
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            for (final tag in _item.tags)
+                              TagChip('${tag.tagType}: ${tag.tagValue}'),
+                          ],
+                        ),
+                  const SizedBox(height: 24),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isBusy ? null : _editItem,
+                          icon: const Icon(Icons.edit_outlined),
+                          label: const Text('수정'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: FilledButton.icon(
+                          onPressed: _isBusy
+                              ? null
+                              : () => Navigator.pop(context, _item),
+                          icon: const Icon(Icons.auto_awesome_outlined),
+                          label: const Text('코디 추천'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ClothingImageFallback extends StatelessWidget {
@@ -1788,38 +2571,49 @@ class _PromptBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        border: Border.all(color: AppColors.separator),
-        borderRadius: BorderRadius.circular(16),
+        color: AppColors.groupedBackground,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.separator.withOpacity(0.5)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          TextField(
-            controller: controller,
-            minLines: 3,
-            maxLines: 5,
-            textInputAction: TextInputAction.newline,
-            decoration: const InputDecoration(
-              hintText: '예: 내일 발표 때 입을 옷 추천해줘',
-              border: InputBorder.none,
-              prefixIcon:
-                  Icon(Icons.search_outlined, color: AppColors.secondaryText),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              minLines: 1,
+              maxLines: 3,
+              textInputAction: TextInputAction.send,
+              onSubmitted: isLoading ? null : (_) => onSubmit(),
+              style: Theme.of(context).textTheme.bodyLarge,
+              decoration: const InputDecoration(
+                hintText: '코디를 추천받아 보세요',
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          FilledButton.icon(
-            onPressed: isLoading ? null : onSubmit,
-            icon: isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white),
+          const SizedBox(width: 6),
+          SizedBox(
+            width: 36,
+            height: 36,
+            child: isLoading
+                ? const Padding(
+                    padding: EdgeInsets.all(8),
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Icon(Icons.send_outlined),
-            label: Text(isLoading ? '질문 중...' : 'Gemini에게 질문'),
+                : IconButton.filled(
+                    onPressed: onSubmit,
+                    icon: const Icon(Icons.arrow_upward_rounded, size: 18),
+                    padding: EdgeInsets.zero,
+                    style: IconButton.styleFrom(
+                      backgroundColor: AppColors.primaryText,
+                      foregroundColor: AppColors.background,
+                      shape: const CircleBorder(),
+                    ),
+                  ),
           ),
         ],
       ),

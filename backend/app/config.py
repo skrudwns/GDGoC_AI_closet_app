@@ -39,6 +39,9 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
 
+    # --- Weather ---
+    openweathermap_api_key: str = ""
+
 
 # 싱글턴 인스턴스
 settings = Settings()

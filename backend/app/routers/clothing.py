@@ -16,7 +16,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, HTTPExcepti
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.schemas.clothing import ClothingListResponse, ClothingResponse
+from app.schemas.clothing import ClothingListResponse, ClothingResponse, ClothingUpdate
 from app.schemas.pipeline import UploadResponse
 from app.services.clothing_service import ClothingService, create_task, update_task
 from app.pipeline import orchestrator
@@ -147,3 +147,28 @@ async def delete_clothing(
     deleted = await service.delete_clothing(cloth_id=cloth_id, user_id=user_id)
     if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="의류 아이템을 찾을 수 없습니다.")
+
+
+@router.patch(
+    "/{cloth_id}",
+    response_model=ClothingResponse,
+    summary="의류 정보 수정",
+)
+async def update_clothing(
+    cloth_id: int,
+    user_id: int,
+    body: ClothingUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> ClothingResponse:
+    service = ClothingService(db)
+    updated = await service.update_clothing(
+        cloth_id=cloth_id,
+        user_id=user_id,
+        category=body.category,
+        sub_category=body.sub_category,
+        pattern=body.pattern,
+    )
+    if updated is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="의류 아이템을 찾을 수 없습니다.")
+    return updated
+

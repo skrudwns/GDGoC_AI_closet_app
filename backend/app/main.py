@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 
 from app.config import settings
 from app.database import create_tables
-from app.routers import clothing, pipeline
+from app.routers import clothing, pipeline, weather
 
 # 로깅 설정
 logging.basicConfig(
@@ -65,6 +65,7 @@ app.mount(
 # 라우터 등록
 app.include_router(clothing.router)
 app.include_router(pipeline.router)
+app.include_router(weather.router)
 
 
 @app.get("/", tags=["health"])

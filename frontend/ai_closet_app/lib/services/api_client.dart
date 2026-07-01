@@ -84,6 +84,108 @@ class ClosetApiClient {
   /// imageUrl 예: "storage/crops/xxx.jpg"
   /// → http://localhost:8000/storage/crops/xxx.jpg
   static String imageFullUrl(String imageUrl) => '$baseUrl/$imageUrl';
+
+  /// 현재 날씨 정보를 조회합니다.
+  ///
+  /// GET /weather?lat={lat}&lon={lon}
+  static Future<WeatherInfo> getWeather({
+    double lat = 37.5665,
+    double lon = 126.9780,
+  }) async {
+    final uri = Uri.parse('$baseUrl/weather').replace(
+      queryParameters: {
+        'lat': lat.toString(),
+        'lon': lon.toString(),
+      },
+    );
+    final response = await http.get(uri);
+
+    if (response.statusCode != 200) {
+      throw ApiException(
+        '날씨 조회 실패 (${response.statusCode}): ${response.body}',
+      );
+    }
+
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return WeatherInfo.fromJson(json);
+  }
+
+  /// 의류 아이템을 삭제합니다.
+  ///
+  /// DELETE /clothing/{clothId}?user_id=1
+  static Future<void> deleteClothing({
+    required int clothId,
+    int userId = 1,
+  }) async {
+    final uri = Uri.parse('$baseUrl/clothing/$clothId').replace(
+      queryParameters: {'user_id': userId.toString()},
+    );
+    final response = await http.delete(uri);
+    if (response.statusCode != 204) {
+      throw ApiException('삭제 실패 (${response.statusCode}): ${response.body}');
+    }
+  }
+
+  /// 의류 기본 정보를 수정합니다.
+  ///
+  /// PATCH /clothing/{clothId}?user_id=1
+  static Future<ClothingApiItem> updateClothing({
+    required int clothId,
+    int userId = 1,
+    String? category,
+    String? subCategory,
+    String? pattern,
+  }) async {
+    final uri = Uri.parse('$baseUrl/clothing/$clothId').replace(
+      queryParameters: {'user_id': userId.toString()},
+    );
+    final body = <String, dynamic>{};
+    if (category != null) body['category'] = category;
+    if (subCategory != null) body['sub_category'] = subCategory;
+    if (pattern != null) body['pattern'] = pattern;
+
+    final response = await http.patch(
+      uri,
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode(body),
+    );
+    if (response.statusCode != 200) {
+      throw ApiException('수정 실패 (${response.statusCode}): ${response.body}');
+    }
+    final json = jsonDecode(response.body) as Map<String, dynamic>;
+    return ClothingApiItem.fromJson(json);
+  }
+}
+
+class WeatherInfo {
+  final double temp;
+  final double feelsLike;
+  final String description;
+  final String main;
+  final int humidity;
+  final bool isMock;
+
+  WeatherInfo({
+    required this.temp,
+    required this.feelsLike,
+    required this.description,
+    required this.main,
+    required this.humidity,
+    required this.isMock,
+  });
+
+  factory WeatherInfo.fromJson(Map<String, dynamic> json) {
+    return WeatherInfo(
+      temp: (json['temp'] as num).toDouble(),
+      feelsLike: (json['feels_like'] as num).toDouble(),
+      description: json['description'] as String,
+      main: json['main'] as String,
+      humidity: json['humidity'] as int,
+      isMock: json['is_mock'] as bool,
+    );
+  }
+
+  String get summary => '기온 ${temp.toStringAsFixed(1)}°C(체감 ${feelsLike.toStringAsFixed(1)}°C), 날씨: $description, 습도: $humidity%';
 }
 
 class ApiException implements Exception {

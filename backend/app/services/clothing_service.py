@@ -159,6 +159,41 @@ class ClothingService:
         await self.db.commit()
         return True
 
+    async def update_clothing(
+        self,
+        cloth_id: int,
+        user_id: int,
+        category: str | None,
+        sub_category: str | None,
+        pattern: str | None,
+    ) -> Optional[ClothingResponse]:
+        """
+        의류 기본 정보(카테고리, 세부 분류, 패턴)를 수정합니다.
+        None이 아닌 필드만 업데이트합니다.
+
+        Returns:
+            수정된 ClothingResponse, 아이템이 없으면 None
+        """
+        stmt = select(Clothing).where(
+            Clothing.cloth_id == cloth_id,
+            Clothing.user_id == user_id,
+        )
+        result = await self.db.execute(stmt)
+        clothing = result.scalar_one_or_none()
+        if clothing is None:
+            return None
+
+        if category is not None:
+            clothing.category = category
+        if sub_category is not None:
+            clothing.sub_category = sub_category
+        if pattern is not None:
+            clothing.pattern = pattern
+
+        await self.db.commit()
+        await self.db.refresh(clothing)
+        return self._to_response(clothing)
+
     @staticmethod
     def _to_response(clothing: Clothing) -> ClothingResponse:
         """ORM 모델을 응답 스키마로 변환합니다."""
